@@ -40,6 +40,8 @@ aa('ident_name', type=str, nargs='?',
    help='When specified, only identifiers containing the name given '
         'will be shown in the output. Search is case sensitive. '
         'Has no effect when --http is set.')
+aa('--hide-inherited-methods', action='store_true',
+   help='When set, instance methods that are inherited and not overridden will be hidden.')
 aa('--version', action='store_true',
    help='Print the version of pdoc and exit.')
 aa('--html', action='store_true',
@@ -476,7 +478,8 @@ if __name__ == '__main__':
         else:
             module = pdoc.import_module(args.module_name)
     module = pdoc.Module(module, docfilter=docfilter,
-                         allsubmodules=args.all_submodules)
+                         allsubmodules=args.all_submodules,
+                         hide_inherited_methods=args.hide_inherited_methods)
 
     # Plain text?
     if not args.html and not args.all_submodules:

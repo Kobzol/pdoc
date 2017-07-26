@@ -187,6 +187,7 @@ import os.path as path
 import pkgutil
 import re
 import sys
+import itertools
 
 from mako.lookup import TemplateLookup
 from mako.exceptions import TopLevelLookupException
@@ -238,34 +239,36 @@ object's `directories` attribute.
 
 
 def html(module_name, docfilter=None, allsubmodules=False,
-         external_links=False, link_prefix='', source=True):
+         external_links=False, link_prefix='', source=True,
+         hide_inherited_methods=False):
     """
-    Returns the documentation for the module `module_name` in HTML
-    format. The module must be importable.
+        Returns the documentation for the module `module_name` in HTML
+        format. The module must be importable.
 
-    `docfilter` is an optional predicate that controls which
-    documentation objects are shown in the output. It is a single
-    argument function that takes a documentation object and returns
-    `True` or `False`. If `False`, that object will not be included in
-    the output.
+        `docfilter` is an optional predicate that controls which
+        documentation objects are shown in the output. It is a single
+        argument function that takes a documentation object and returns
+        `True` or `False`. If `False`, that object will not be included in
+        the output.
 
-    If `allsubmodules` is `True`, then every submodule of this module
-    that can be found will be included in the documentation, regardless
-    of whether `__all__` contains it.
+        If `allsubmodules` is `True`, then every submodule of this module
+        that can be found will be included in the documentation, regardless
+        of whether `__all__` contains it.
 
-    If `external_links` is `True`, then identifiers to external modules
-    are always turned into links.
+        If `external_links` is `True`, then identifiers to external modules
+        are always turned into links.
 
-    If `link_prefix` is `True`, then all links will have that prefix.
-    Otherwise, links are always relative.
+        If `link_prefix` is `True`, then all links will have that prefix.
+        Otherwise, links are always relative.
 
-    If `source` is `True`, then source code will be retrieved for
-    every Python object whenever possible. This can dramatically
-    decrease performance when documenting large modules.
-    """
+        If `source` is `True`, then source code will be retrieved for
+        every Python object whenever possible. This can dramatically
+        decrease performance when documenting large modules.
+        """
     mod = Module(import_module(module_name),
                  docfilter=docfilter,
-                 allsubmodules=allsubmodules)
+                 allsubmodules=allsubmodules,
+                 hide_inherited_methods=hide_inherited_methods)
     return mod.html(external_links=external_links,
                     link_prefix=link_prefix, source=source)
 
@@ -372,7 +375,7 @@ def _safe_import(module_name):
     device. The obligation is on the caller to close `stdin` in order
     to avoid impolite modules from blocking on `stdin` when imported.
     """
-    class _Null (object):
+    class _Null(object):
         def write(self, *_):
             pass
 
@@ -436,7 +439,18 @@ def _is_exported(ident_name):
     return not ident_name.startswith('_')
 
 
-class Doc (object):
+def _is_inherited(cls, func):
+    if cls:
+        mro = inspect.getmro(cls.cls)
+        if len(mro) > 1:
+            parents = mro[1:]
+            methods = tuple(itertools.chain.from_iterable(
+                ((m[1].__func__ for m in inspect.getmembers(p, inspect.ismethod)) for p in parents)))
+            return func in methods
+    return False
+
+
+class Doc(object):
     """
     A base class for all documentation objects.
 
@@ -509,7 +523,7 @@ class Doc (object):
         return len(self.docstring.strip()) == 0
 
 
-class Module (Doc):
+class Module(Doc):
     """
     Representation of a module's documentation.
     """
@@ -521,7 +535,8 @@ class Module (Doc):
         it was imported. It is always an absolute import path.
         """
 
-    def __init__(self, module, docfilter=None, allsubmodules=False):
+    def __init__(self, module, docfilter=None, allsubmodules=False,
+                 hide_inherited_methods=False):
         """
         Creates a `Module` documentation object given the actual
         module Python object.
@@ -536,6 +551,9 @@ class Module (Doc):
         If `allsubmodules` is `True`, then every submodule of this
         module that can be found will be included in the
         documentation, regardless of whether `__all__` contains it.
+
+        If `hide_inherited_methods` is `True`, then inherited methods that
+        are not overridden will be hidden.
         """
         name = getattr(module, '__pdoc_module_name', module.__name__)
         super(Module, self).__init__(name, module, inspect.getdoc(module))
@@ -543,6 +561,7 @@ class Module (Doc):
         self._filtering = docfilter is not None
         self._docfilter = (lambda _: True) if docfilter is None else docfilter
         self._allsubmodules = allsubmodules
+        self._hide_inherited_methods = hide_inherited_methods
 
         self.doc = {}
         """A mapping from identifier name to a documentation object."""
@@ -675,6 +694,7 @@ class Module (Doc):
                      external_links=external_links,
                      link_prefix=link_prefix,
                      show_source_code=source,
+                     hide_inherited_methods=self._hide_inherited_methods,
                      **kwargs)
         return t.strip()
 
@@ -858,10 +878,11 @@ class Module (Doc):
         obj.__dict__['__pdoc_module_name'] = '%s.%s' % (self.refname, name)
         return Module(obj,
                       docfilter=self._docfilter,
-                      allsubmodules=self._allsubmodules)
+                      allsubmodules=self._allsubmodules,
+                      hide_inherited_methods=self._hide_inherited_methods)
 
 
-class Class (Doc):
+class Class(Doc):
     """
     Representation of a class's documentation.
     """
@@ -1066,6 +1087,9 @@ class Function (Doc):
 
         In particular, static class methods have this set to False.
         """
+
+        self.inherited = _is_inherited(cls, func_obj)
+        """Whether the function is inherited"""
 
     @property
     def source(self):

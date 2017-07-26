@@ -154,6 +154,14 @@
     if name is None:
       return refname
     return '<a href="%s">%s</a>' % (url, name)
+
+  def is_visible(function):
+    if not function.method:
+      return True
+    elif not function.inherited:
+      return True
+    else:
+      return not hide_inherited_methods
 %>
 <%def name="show_source(d)">
   % if show_source_code and d.source is not None and len(d.source) > 0:
@@ -236,13 +244,15 @@
   %>
 
   <%def name="show_func(f)">
-  <div class="item">
-    <div class="name def" id="${f.refname}">
-    <p>def ${ident(f.name)}(</p><p>${f.spec() | h})</p>
+  %if is_visible(f):
+    <div class="item">
+      <div class="name def" id="${f.refname}">
+      <p>def ${ident(f.name)}(</p><p>${f.spec() | h})</p>
+      </div>
+      ${show_inheritance(f)}
+      ${show_desc(f)}
     </div>
-    ${show_inheritance(f)}
-    ${show_desc(f)}
-  </div>
+  %endif
   </%def>
 
   % if 'http_server' in context.keys() and http_server:
